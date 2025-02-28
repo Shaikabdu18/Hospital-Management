@@ -1,0 +1,14 @@
+.chat-container .message {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.chat-container .doctor {
+  background-color: #e1f7d5;
+}
+
+.chat-container .patient {
+  background-color: #f0f0f0;
+}
+
+

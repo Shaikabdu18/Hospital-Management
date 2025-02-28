@@ -13,6 +13,7 @@ import Footer from './components/Footer'
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Verify from './pages/Verify'
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const App = () => {
   return (
