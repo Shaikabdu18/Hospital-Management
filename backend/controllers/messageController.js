@@ -6,12 +6,7 @@ import userModel from "../models/userModel.js";
 const sendMessage = async (req, res) => {
     try {
         const { userId, receiverId, message,docId } = req.body;
-        console.log(req.body);
-        console.log(userId);
         
-        
-
-        // Validate sender and receiver
         const sender = await userModel.findById(userId||docId) || await doctorModel.findById(userId||docId);
         const receiver = await userModel.findById(receiverId) || await doctorModel.findById(receiverId);
         
@@ -39,22 +34,20 @@ const sendMessage = async (req, res) => {
 // Get messages between a doctor and patient
 const getMessages = async (req, res) => {
     try {
-        const { docId, userId } = req.body;  // Either docId or userId is present
-        const { id } = req.params; // The other ID (either doctor or user)
+        const { docId, userId } = req.body;  
+        const { id } = req.params; 
 
         console.log("Request Body:", req.body);
         console.log("Param ID:", id);
 
-        // Determine sender and receiver based on login
-        const senderId = userId || docId;  // Whichever exists in req.body
-        const receiverId = id;  // The other person (doctor or user)
+        const senderId = userId || docId;  
+        const receiverId = id; 
 
         // Validate IDs
         if (!senderId || !receiverId) {
             return res.status(400).json({ success: false, message: "Invalid sender or receiver ID" });
         }
 
-        // Fetch messages between the two users (in both directions)
         const messages = await messageModel.find({
             $or: [
                 { senderId, receiverId },
