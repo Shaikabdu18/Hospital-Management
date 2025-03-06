@@ -9,6 +9,7 @@ import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
 
 const MyAppointments = () => {
     const [show, setShow] = useState(false)
+    
     const { backendUrl, token } = useContext(AppContext)
     const navigate = useNavigate()
 
@@ -32,13 +33,51 @@ const MyAppointments = () => {
         setShow(false)   
     }
 
-    // Handle sending a new message
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      setMessages([...messages, { user: 'Patient', text: newMessage }]);
-      setNewMessage('');
-    }
-  };
+    const handleSendMessage = () => {
+        sendPatientMessage();
+    };
+
+    useEffect(() => {
+        if (token) {
+            fetchAppointments();
+        }
+    }, [token]);
+
+    // Fetch patient's appointments
+    const fetchAppointments = async () => {
+        try {
+            const { data } = await axios.get(`${backendUrl}/api/user/appointments`, {
+                headers: { token }
+            });
+            setAppointments(data.appointments);
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to fetch appointments.");
+        }
+    };
+
+    // Cancel appointment from chatbot
+    const cancelAppointmentBot = async (appointmentId) => {
+        try {
+            const { data } = await axios.post(`${backendUrl}/api/user/cancel-appointment`, 
+                { appointmentId }, 
+                { headers: { token } }
+            );
+            if (data.success) {
+                toast.success("Appointment cancelled.");
+                fetchAppointments(); // Refresh data
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to cancel appointment.");
+        }
+    };
+
+ 
+    
+    
 
   // Function to format the date eg. ( 20_01_2000 => 20 Jan 2000 )
 const slotDateFormat = (slotDate) => {
@@ -53,6 +92,71 @@ const slotDateFormat = (slotDate) => {
     
     return dateArray[0] + " " + months[Number(dateArray[1])] + " " + dateArray[2];
 }
+
+    // Sending Patient Message Using API
+    const sendPatientMessage = async () => {
+        if (!newMessage.trim() || !appointmentDetails?.docData?._id) {
+            toast.error("Message cannot be empty or doctor not selected.");
+            return;
+        }
+    
+        const messageData = {
+            message: newMessage,
+            receiverId: appointmentDetails.docData._id, // Sending to the doctor
+        };
+    
+        try {
+            const { data } = await axios.post(`${backendUrl}/api/patient/send-message`, messageData, {
+                headers: { token }
+            });
+    
+            if (data.success) {
+                setMessages([...messages, { user: "Patient", text: newMessage }]); // Update UI
+                setNewMessage(""); // Clear input after sending
+                toast.success("Message sent successfully!");
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            console.error("Error sending message:", error);
+            toast.error(error.response?.data?.message || "Failed to send message.");
+        }
+    };
+    
+
+    // Fetching Messages Between Doctor and Patient
+    const getPatientMessages = async (receiverId) => {
+        if (!receiverId) {
+            toast.error("Invalid doctor ID");
+            return;
+        }
+    
+        try {
+            const { data } = await axios.get(`${backendUrl}/api/patient/messages/${receiverId}`, {
+                headers: { token },
+            });
+    
+            console.log("Fetched messages:", data.messages); // Debugging Step
+    
+            if (Array.isArray(data.messages)) {
+                setMessages(
+                    data.messages.map(msg => ({
+                        user: msg.senderId === receiverId ? "Doctor" : "Patient", // Identify sender
+                        text: msg.text || "",
+                    }))
+                );
+            } else {
+                console.warn("Unexpected API response:", data);
+                setMessages([]);
+            }
+        } catch (error) {
+            console.error("Error fetching messages:", error);
+            toast.error(error.response?.data?.message || "Failed to fetch messages.");
+        }
+    };
+    
+    
+
 
     // Getting User Appointments Data Using API
     const getUserAppointments = async () => {
@@ -155,44 +259,57 @@ const slotDateFormat = (slotDate) => {
             getUserAppointments()
         }
     }, [token])
+    const handleShowChat = (appointment) => {
+        setAppointmentDetails(appointment);
+        if (appointment?.docData?._id) {
+            getPatientMessages(appointment.docData._id); // Fetch messages on open
+        }
+        setShow(true);
+    };
+    
+    
 
-
-
-    const chatbotFlow= [
+   
+    // Generate chatbot flow dynamically
+    const chatbotFlow = [
+        { id: '1', message: 'Hello! How can I assist you regarding your appointment?', trigger: 'options' },
         {
-            id: '1',
-            message: `Hello! Your appointment with Dr. ${appointmentDetails?.docData?.name} is scheduled for ${appointmentDetails ? `${appointmentDetails.slotDate} at ${appointmentDetails.slotTime}` : ''}. How can I assist you?`,
-            trigger: '2',
+            id: 'options',
+            options: [
+                { value: 'status', label: 'Check my appointment status', trigger: 'status' },
+                { value: 'cancel', label: 'Cancel my appointment', trigger: 'cancel' },
+                { value: 'payment', label: 'Payment options', trigger: 'payment' },
+            ]
         },
         {
-            id: '2',
-            message: 'Please tell me how I can help you today.',
-            trigger: '3',
+            id: 'status',
+            message: appointments.length > 0 
+                ? `Your appointment is with Dr. ${appointments[0].docData.name} on ${appointments[0].slotDate} at ${appointments[0].slotTime}.` 
+                : "You have no active appointments.",
+            trigger: 'options'
         },
         {
-            id: '3',
-            user: true,
-            trigger: '4',
+            id: 'cancel',
+            options: appointments.length > 0
+                ? [{ value: 'confirm_cancel', label: 'Confirm cancel', trigger: 'confirm_cancel' }]
+                : [{ value: 'no_appointment', label: 'No appointments to cancel', trigger: 'options' }]
         },
         {
-            id: '4',
-            message: 'Thank you for the details. I will get back to you shortly!',
-            end: true,
+            id: 'confirm_cancel',
+            message: 'Your appointment has been cancelled.',
+            trigger: () => {
+                if (appointments.length > 0) {
+                    cancelAppointment(appointments[0]._id);
+                }
+                return 'options';
+            }
         },
         {
-            id: 'payment_details',
-            message: 'To make a payment, you can choose between Razorpay or Stripe.',
-            trigger: '5',
-        },
-        {
-            id: '4',
-            message: 'Is there anything else you would like to know?',
-            trigger: '3',
-        },
-        {
-            id: '5',
-            message: 'Please select the payment method: Razorpay or Stripe.',
-            trigger: '3',
+            id: 'payment',
+            message: appointments.length > 0 
+                ? `Your appointment is ${appointments[0].payment ? 'paid' : 'pending payment'}. You can pay via Razorpay or Stripe.` 
+                : "No appointments found.",
+            trigger: 'options'
         },
     ];
 
@@ -200,6 +317,19 @@ const slotDateFormat = (slotDate) => {
     return (
         <div>
             <p className='pb-3 mt-12 text-lg font-medium text-gray-600 border-b'>My appointments</p>
+            <div className='flex mt-10  justify-end text-sm text-end'>
+                            <button 
+                                onClick={() => setShowChatBot(true)}  // Trigger chatbot visibility
+                                className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-primary hover:text-white transition-all duration-300'>
+                               Chat with Bot 🤖
+                            </button>
+                        </div>
+                                   {/* ChatBot displayed at the bottom */}
+                                   {showChatBot && chatbotFlow.length > 0 && (
+    <div className="chatbot-container">
+        <ChatBot steps={chatbotFlow} botDelay={500} userDelay={500} hideSubmitButton={true} />
+    </div>
+)}
             <div className=''>
                 {appointments.map((item, index) => (
                     <div key={index} className='grid grid-cols-[1fr_2fr] gap-4 sm:flex sm:gap-6 py-4 border-b'>
@@ -216,7 +346,7 @@ const slotDateFormat = (slotDate) => {
                         </div>
                         <div></div>
                         <div className='flex flex-col gap-2 justify-end text-sm text-center'>
-                            {!item.cancelled && !item.payment && !item.isCompleted && payment !== item._id &&  <button   className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-primary hover:text-white transition-all duration-300' onClick={() => setShow(true)}>Chat With Doctor!!</button> }
+                            {!item.cancelled && !item.payment && !item.isCompleted && payment !== item._id &&  <button   className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-primary hover:text-white transition-all duration-300' onClick={() => handleShowChat(item)}>Chat With Doctor!!</button> }
                             {!item.cancelled && !item.payment && !item.isCompleted && payment !== item._id && <button onClick={() => setPayment(item._id)} className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-primary hover:text-white transition-all duration-300'>Pay Online</button>}
                             {!item.cancelled && !item.payment && !item.isCompleted && payment === item._id && <button onClick={() => appointmentStripe(item._id)} className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-gray-100 hover:text-white transition-all duration-300 flex items-center justify-center'><img className='max-w-20 max-h-5' src={assets.stripe_logo} alt="" /></button>}
                             {!item.cancelled && !item.payment && !item.isCompleted && payment === item._id && <button onClick={() => appointmentRazorpay(item._id)} className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-gray-100 hover:text-white transition-all duration-300 flex items-center justify-center'><img className='max-w-20 max-h-5' src={assets.razorpay_logo} alt="" /></button>}
@@ -246,10 +376,11 @@ const slotDateFormat = (slotDate) => {
           <div className="chat-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
             {/* Display chat messages */}
             {messages.map((msg, index) => (
-              <div key={index} className={`message ${msg.user.toLowerCase()}`}>
-                <strong>{msg.user}:</strong> {msg.text}
-              </div>
+            <div key={index} className={`message ${msg.user ? msg.user.toLowerCase() : 'unknown'}`}>
+                <strong>{msg.user || 'Unknown'}:</strong> {msg.text}
+            </div>
             ))}
+
           </div>
 
           <hr />
@@ -273,24 +404,8 @@ const slotDateFormat = (slotDate) => {
           </Row>
         </Modal.Body>
       </Modal>
-            <div className='flex mt-10  justify-end text-sm text-end'>
-                            <button 
-                                onClick={() => setShowChatBot(true)}  // Trigger chatbot visibility
-                                className='text-[#696969] sm:min-w-48 py-2 border rounded hover:bg-primary hover:text-white transition-all duration-300'>
-                                Chat With Bot!!
-                            </button>
-                        </div>
-                                   {/* ChatBot displayed at the bottom */}
-            {showChatBot && (
-                <div className="chatbot-container">
-                    <ChatBot 
-                       steps={chatbotFlow} 
-                        botDelay={500} 
-                        userDelay={500} 
-                        hideSubmitButton={true} 
-                    />
-                </div>
-            )}
+           
+
         </div>
     )
 }

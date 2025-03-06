@@ -1,30 +1,108 @@
 import React, { useState, useContext, useEffect } from 'react';
+import axios from 'axios';
 import { DoctorContext } from '../../context/DoctorContext';
 import { AppContext } from '../../context/AppContext';
 import { assets } from '../../assets/assets';
 import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
+import { toast } from 'react-toastify';
 
 const DoctorAppointments = () => {
   const [show, setShow] = useState(false);
   const [messages, setMessages] = useState([]); // Store chat messages
   const [newMessage, setNewMessage] = useState(''); // New message input
+  const [selectedPatientId, setSelectedPatientId] = useState(null); // Store selected patient ID
+   const { backendUrl, token } = useContext(AppContext)
   const { dToken, appointments, getAppointments, cancelAppointment, completeAppointment } = useContext(DoctorContext);
   const { slotDateFormat, calculateAge, currency } = useContext(AppContext);
 
+  // Function to close the modal
   const handleClose = () => {
     setShow(false);
+    setMessages([]); // Clear messages on close
+    setSelectedPatientId(null);
   };
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      setMessages([...messages, { user: 'Doctor', text: newMessage }]);
-      setNewMessage('');  // Clear the message input after sending
+  const getPatientMessages = async (receiverId) => {
+    if (!receiverId) {
+        toast.error("Invalid patient ID");
+        return;
     }
+
+    if (!dToken) {
+        toast.error("Authorization token missing. Please log in again.");
+        return;
+    }
+
+    try {
+        const { data } = await axios.get(`${backendUrl}/api/doctor/messages/${receiverId}`, {
+            headers: { dtoken: dToken }
+        });
+
+        console.log("Fetched messages:", data.messages); // Debugging Step
+
+        if (data.success && Array.isArray(data.messages)) {
+            setMessages(
+                data.messages.map(msg => ({
+                    user: msg.senderId === receiverId ? "Patient" : "Doctor", // Check sender identity
+                    text: msg.text || "",
+                }))
+            );
+        } else {
+            console.warn("Unexpected API response or no messages found:", data);
+            setMessages([]);
+        }
+        console.log("Updated messages state:", messages); // Debugging Step
+    } catch (error) {
+        console.error("Error fetching messages:", error);
+        toast.error(error.response?.data?.message || "Failed to fetch messages.");
+    }
+};
+
+
+
+
+  // Open chat and fetch messages
+  const handleOpenChat = (patientId) => {
+    setSelectedPatientId(patientId);
+    setShow(true);
+    getPatientMessages(patientId); // Fetch messages when chat is opened
   };
 
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedPatientId) {
+        toast.error("Message cannot be empty or patient not selected.");
+        return;
+    }
+
+    const messageData = {
+        message: newMessage,
+        receiverId: selectedPatientId,
+    };
+
+    try {
+        const { data } = await axios.post(`${backendUrl}/api/doctor/send-message`, messageData, {
+            headers: { dtoken: dToken }
+        });
+
+        if (data.success) {
+            setMessages([...messages, { user: "Doctor", text: newMessage }]); // Update UI
+            setNewMessage(""); // Clear input after sending
+        } else {
+            toast.error(data.message);
+        }
+    } catch (error) {
+        console.error("Error sending message:", error);
+        toast.error(error.response?.data?.message || "Failed to send message.");
+    }
+};
+
+
+  
+
+  // Fetch appointments when the doctor token is available
   useEffect(() => {
     if (dToken) {
-      getAppointments();
+      getAppointments(); // Get appointments when the doctor token is available
     }
   }, [dToken]);
 
@@ -33,7 +111,6 @@ const DoctorAppointments = () => {
       <p className="mb-3 text-lg font-medium">All Appointments</p>
 
       <div className="bg-white border rounded text-sm max-h-[80vh] overflow-y-scroll">
-        {/* Table Structure */}
         <table className="w-full table-auto">
           <thead className="border-b bg-gray-100">
             <tr>
@@ -50,7 +127,7 @@ const DoctorAppointments = () => {
           <tbody>
             {appointments.map((item, index) => (
               <tr key={index} className="border-b hover:bg-gray-50">
-                <td className="px-4 py-2">{index + 1}</td> {/* Index starts from 1 */}
+                <td className="px-4 py-2">{index + 1}</td>
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <img src={item.userData.image} className="w-8 rounded-full" alt="" />
@@ -63,9 +140,7 @@ const DoctorAppointments = () => {
                   </p>
                 </td>
                 <td className="px-4 py-2">{calculateAge(item.userData.dob)}</td>
-                <td className="px-4 py-2">
-                  {slotDateFormat(item.slotDate)}, {item.slotTime}
-                </td>
+                <td className="px-4 py-2">{slotDateFormat(item.slotDate)}, {item.slotTime}</td>
                 <td className="px-4 py-2">{currency}{item.amount}</td>
                 <td className="px-4 py-2">
                   {item.cancelled
@@ -73,23 +148,13 @@ const DoctorAppointments = () => {
                     : item.isCompleted
                       ? <p className="text-green-500 text-xs font-medium">Completed</p>
                       : <div className="flex gap-2">
-                          <img
-                            onClick={() => cancelAppointment(item._id)}
-                            className="w-6 cursor-pointer"
-                            src={assets.cancel_icon}
-                            alt="Cancel"
-                          />
-                          <img
-                            onClick={() => completeAppointment(item._id)}
-                            className="w-6 cursor-pointer"
-                            src={assets.tick_icon}
-                            alt="Complete"
-                          />
+                          <img onClick={() => cancelAppointment(item._id)} className="w-6 cursor-pointer" src={assets.cancel_icon} alt="Cancel" />
+                          <img onClick={() => completeAppointment(item._id)} className="w-6 cursor-pointer" src={assets.tick_icon} alt="Complete" />
                         </div>
                   }
                 </td>
                 <td className="text-sm inline border border-primary px-4 rounded-full">
-                  <button className="mt-3" onClick={() => setShow(true)}>Chat</button>
+                  <button className="mt-3" onClick={() => handleOpenChat(item.userData._id)}>Chat</button>
                 </td>
               </tr>
             ))}
@@ -98,30 +163,15 @@ const DoctorAppointments = () => {
       </div>
 
       {/* Chat Modal */}
-      <Modal
-        centered
-        size="lg"
-        show={show}
-        onHide={handleClose}
-        scrollable={true}
-        aria-labelledby="chat-with-doctor-modal"
-      >
+      <Modal centered size="lg" show={show} onHide={handleClose} scrollable>
         <Modal.Header closeButton>
           <Modal.Title>
-            <label className="font-regular-24">Chat With Doctor</label>
+            <label className="font-regular-24">Chat With Patient</label>
           </Modal.Title>
         </Modal.Header>
 
         <Modal.Body>
-          <div
-            className="chat-container"
-            style={{
-              maxHeight: '400px',
-              overflowY: 'auto',
-              paddingBottom: '15px',
-            }}
-          >
-            {/* Display chat messages */}
+          <div className="chat-container" style={{ maxHeight: '400px', overflowY: 'auto', paddingBottom: '15px' }}>
             {messages.map((msg, index) => (
               <div
                 key={index}
@@ -153,12 +203,7 @@ const DoctorAppointments = () => {
               />
             </Col>
             <Col xs="auto">
-              <Button
-                variant="primary"
-                onClick={handleSendMessage}
-                className="mt-2"
-                style={{ alignSelf: 'flex-end' }}
-              >
+              <Button variant="primary" onClick={handleSendMessage} className="mt-2">
                 Send
               </Button>
             </Col>
