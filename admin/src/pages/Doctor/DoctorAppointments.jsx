@@ -44,7 +44,7 @@ const DoctorAppointments = () => {
             setMessages(
                 data.messages.map(msg => ({
                     user: msg.senderId === receiverId ? "Patient" : "Doctor", // Check sender identity
-                    text: msg.text || "",
+                    text: msg.message || "",
                 }))
             );
         } else {
@@ -163,7 +163,13 @@ const DoctorAppointments = () => {
       </div>
 
       {/* Chat Modal */}
-      <Modal centered size="lg" show={show} onHide={handleClose} scrollable>
+      <Modal
+  size="lg"
+  show={show}
+  onHide={handleClose}
+  scrollable
+  style={{ top: '120px',left:'40%',padding:'20px' ,marginTop: '0',minWidth:'350px' , position: 'absolute', backgroundColor:'white'}}
+>     
         <Modal.Header closeButton>
           <Modal.Title>
             <label className="font-regular-24">Chat With Patient</label>
@@ -199,7 +205,7 @@ const DoctorAppointments = () => {
                 placeholder="Type your message..."
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                style={{ marginBottom: '10px' }}
+                style={{ marginBottom: '10px' ,width:'310px'}}
               />
             </Col>
             <Col xs="auto">

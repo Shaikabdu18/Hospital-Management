@@ -112,6 +112,8 @@ const slotDateFormat = (slotDate) => {
     
             if (data.success) {
                 setMessages([...messages, { user: "Patient", text: newMessage }]); // Update UI
+                console.log(messages,'mess');
+                
                 setNewMessage(""); // Clear input after sending
                 toast.success("Message sent successfully!");
             } else {
@@ -142,7 +144,7 @@ const slotDateFormat = (slotDate) => {
                 setMessages(
                     data.messages.map(msg => ({
                         user: msg.senderId === receiverId ? "Doctor" : "Patient", // Identify sender
-                        text: msg.text || "",
+                        text: msg.message || "",
                     }))
                 );
             } else {
